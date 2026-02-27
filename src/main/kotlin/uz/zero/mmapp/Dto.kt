@@ -1,18 +1,29 @@
 package uz.zero.mmapp
 
+import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.PastOrPresent
+import jakarta.validation.constraints.Positive
 import java.time.LocalDate
 
 data class ExpenseRequest(
+    @field:NotBlank
     val title: String,
+    
+    @field:NotNull
     val categoryId: Long,
+    
     val description: String?,
+    
+    @field:Positive(message = "jakarta.validation.constraints.Positive.message")
     val amount: Double,
+    
     @field:PastOrPresent(message = "DATE_CANNOT_BE_FUTURE")
     val date: LocalDate
 )
 
 data class CategoryRequest(
+    @field:NotBlank
     val name: String
 )
 
@@ -41,7 +52,8 @@ data class MonthlyStatsResponse(
 
 data class CategoryStatDTO(
     val categoryName: String,
-    val amount: Double
+    val amount: Double,
+    val percentage: Double
 )
 
 data class BaseMessage(

@@ -72,8 +72,12 @@ class ExpenseServiceImpl(
         val difference = currentMonthTotal - previousMonthTotal
         val percentageChange = if (previousMonthTotal != 0.0) (difference / previousMonthTotal) * 100 else 0.0
 
-        val categoryStats = expensesRepository.findCategoryStatistics(startDate, endDate, userId).map {
-            CategoryStatDTO(it.categoryName, it.totalAmount)
+        val allCategories = categoryRepository.findAllNotDeleted()
+        val dbStats = expensesRepository.findCategoryStatistics(startDate, endDate, userId).associate { it.categoryName to it.totalAmount }
+        val categoryStats = allCategories.map {
+            val amount = dbStats[it.name] ?: 0.0
+            val percentage = if (currentMonthTotal > 0) (amount / currentMonthTotal) * 100 else 0.0
+            CategoryStatDTO(it.name, amount, percentage)
         }
 
         return MonthlyStatsResponse(
@@ -99,13 +103,17 @@ class ExpenseServiceImpl(
         val headerRow = sheet.createRow(0)
         createCell(headerRow, 0, "Category", headerStyle)
         createCell(headerRow, 1, "Amount", headerStyle)
+        createCell(headerRow, 2, "Percentage", headerStyle)
 
         var rowIdx = 1
         stats.categoryStats.forEach {
             val row = sheet.createRow(rowIdx++)
             createCell(row, 0, it.categoryName, dataStyle)
             createCell(row, 1, it.amount, currencyStyle)
+            createCell(row, 2, "${String.format("%.1f", it.percentage)}%", dataStyle)
         }
+
+        sheet.autoSizeColumn(2)
 
         val summaryStartRow = rowIdx + 1
         val summaryRow1 = sheet.createRow(summaryStartRow)
@@ -140,8 +148,12 @@ class ExpenseServiceImpl(
 
         val userId = getCurrentUserId()
         val totalAmount = expensesRepository.sumAmountByDateBetween(startDate, endDate, userId) ?: 0.0
-        val categoryStats = expensesRepository.findCategoryStatistics(startDate, endDate, userId).map {
-            CategoryStatDTO(it.categoryName, it.totalAmount)
+        val allCategories = categoryRepository.findAllNotDeleted()
+        val dbStats = expensesRepository.findCategoryStatistics(startDate, endDate, userId).associate { it.categoryName to it.totalAmount }
+        val categoryStats = allCategories.map {
+            val categoryAmount = dbStats[it.name] ?: 0.0
+            val percentage = if (totalAmount > 0) (categoryAmount / totalAmount) * 100 else 0.0
+            CategoryStatDTO(it.name, categoryAmount, percentage)
         }
         val expenses = expensesRepository.findAllByDateBetween(startDate, endDate, userId).map { it.toResponse() }
 
@@ -189,14 +201,16 @@ class ExpenseServiceImpl(
         rowIdx++
         val summaryHeader = sheet.createRow(rowIdx++)
         createCell(summaryHeader, 0, "Summary By Category", summaryStyle)
-        sheet.addMergedRegion(org.apache.poi.ss.util.CellRangeAddress(rowIdx - 1, rowIdx - 1, 0, 2))
-        createCell(summaryHeader, 3, "", summaryStyle)
+        sheet.addMergedRegion(org.apache.poi.ss.util.CellRangeAddress(rowIdx - 1, rowIdx - 1, 0, 1))
+        createCell(summaryHeader, 2, "Amount", summaryStyle)
+        createCell(summaryHeader, 3, "Percentage", summaryStyle)
         
         stats.categoryStats.forEach {
             val row = sheet.createRow(rowIdx++)
             createCell(row, 0, it.categoryName, dataStyle)
-            sheet.addMergedRegion(org.apache.poi.ss.util.CellRangeAddress(rowIdx - 1, rowIdx - 1, 0, 2))
-            createCell(row, 3, it.amount, currencyStyle)
+            sheet.addMergedRegion(org.apache.poi.ss.util.CellRangeAddress(rowIdx - 1, rowIdx - 1, 0, 1))
+            createCell(row, 2, it.amount, currencyStyle)
+            createCell(row, 3, "${String.format("%.1f", it.percentage)}%", dataStyle)
         }
 
         rowIdx++
@@ -327,6 +341,9 @@ interface CategoryService{
 @Service
 class CategoryServiceImpl(private val categoryRepository: CategoryRepository): CategoryService {
     override fun createCategory(request: CategoryRequest): CategoryResponse {
+        categoryRepository.findByNameIgnoreCase(request.name)?.let {
+            throw CategoryAlreadyExistsException()
+        }
         val category = Category(name = request.name)
         return categoryRepository.save(category).toResponse()
     }

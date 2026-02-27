@@ -11,6 +11,10 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 
 import org.springframework.security.core.AuthenticationException
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
+import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.web.HttpRequestMethodNotSupportedException
+import org.springframework.web.bind.MissingServletRequestParameterException
 
 @RestControllerAdvice
 class GlobalExceptionHandler(
@@ -31,6 +35,13 @@ class GlobalExceptionHandler(
                 ResponseEntity
                     .status(HttpStatus.UNAUTHORIZED)
                     .body(BaseMessage(ErrorCode.BAD_CREDENTIALS.code, message))
+            }
+
+            is org.springframework.security.access.AccessDeniedException -> {
+                val message = getLocalizedMessage(ErrorCode.FORBIDDEN.toString()) ?: "Sizda bu amalni bajarish uchun ruxsat yo'q"
+                ResponseEntity
+                    .status(HttpStatus.FORBIDDEN)
+                    .body(BaseMessage(ErrorCode.FORBIDDEN.code, message))
             }
 
             is DataIntegrityViolationException -> {
@@ -57,6 +68,30 @@ class GlobalExceptionHandler(
                 ResponseEntity
                     .badRequest()
                     .body(BaseMessage(ErrorCode.VALIDATION_ERROR.code, errorMessage))
+            }
+
+            is HttpMessageNotReadableException -> {
+                ResponseEntity
+                    .badRequest()
+                    .body(BaseMessage(ErrorCode.INVALID_REQUEST.code, "So'rov formati noto'g'ri (JSON xatosi)"))
+            }
+
+            is MethodArgumentTypeMismatchException -> {
+                ResponseEntity
+                    .badRequest()
+                    .body(BaseMessage(ErrorCode.INVALID_REQUEST.code, "Parametr turi noto'g'ri: ${exception.name}"))
+            }
+
+            is MissingServletRequestParameterException -> {
+                ResponseEntity
+                    .badRequest()
+                    .body(BaseMessage(ErrorCode.INVALID_REQUEST.code, "Majburiy parametr yetishmayapti: ${exception.parameterName}"))
+            }
+
+            is HttpRequestMethodNotSupportedException -> {
+                ResponseEntity
+                    .status(HttpStatus.METHOD_NOT_ALLOWED)
+                    .body(BaseMessage(405, "Bu servisda ${exception.method} metodi qo'llab-quvvatlanmaydi"))
             }
 
             else -> {
@@ -144,6 +179,10 @@ class InactiveOrganizationException(message: String? = null) : MyException(messa
 
 class CategoryNotFoundException(message: String? = null) : MyException(message) {
     override fun errorType() = ErrorCode.CATEGORY_NOT_FOUND
+}
+
+class CategoryAlreadyExistsException(message: String? = null) : MyException(message) {
+    override fun errorType() = ErrorCode.CATEGORY_ALREADY_EXISTS
 }
 
 class OldPasswordIncorrectException(message: String? = null) : MyException(message) {

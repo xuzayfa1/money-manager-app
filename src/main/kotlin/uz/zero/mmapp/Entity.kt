@@ -61,5 +61,6 @@ class Expenses(
 
 @Entity
 class Category(
+    @Column(unique = true)
     var name: String,
 ): BaseEntity()
