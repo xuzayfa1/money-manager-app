@@ -80,13 +80,16 @@ class ExpenseServiceImpl(
             CategoryStatDTO(it.name, amount, percentage)
         }
 
+        val expenses = expensesRepository.findAllByDateBetween(startDate, endDate, userId).map { it.toResponse() }
+
         return MonthlyStatsResponse(
             month = startDate.format(DateTimeFormatter.ofPattern("MMMM yyyy")),
             totalAmount = currentMonthTotal,
             previousMonthAmount = previousMonthTotal,
             difference = difference,
             percentageChange = percentageChange,
-            categoryStats = categoryStats
+            categoryStats = categoryStats,
+            expenses = expenses
         )
     }
 
@@ -130,6 +133,24 @@ class ExpenseServiceImpl(
 
         sheet.autoSizeColumn(0)
         sheet.autoSizeColumn(1)
+
+        // Transaction Details List
+        rowIdx = summaryStartRow + 5
+        val detailHeaderRow = sheet.createRow(rowIdx++)
+        createCell(detailHeaderRow, 0, "Date", headerStyle)
+        createCell(detailHeaderRow, 1, "Category", headerStyle)
+        createCell(detailHeaderRow, 2, "Title", headerStyle)
+        createCell(detailHeaderRow, 3, "Amount", headerStyle)
+
+        stats.expenses.forEach {
+            val row = sheet.createRow(rowIdx++)
+            createCell(row, 0, it.date.toString(), dataStyle)
+            createCell(row, 1, it.category?.name ?: "N/A", dataStyle)
+            createCell(row, 2, it.title, dataStyle)
+            createCell(row, 3, it.amount, currencyStyle)
+        }
+
+        for (i in 0..3) sheet.autoSizeColumn(i)
 
         val outputStream = ByteArrayOutputStream()
         workbook.write(outputStream)

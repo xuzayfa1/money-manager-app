@@ -47,8 +47,10 @@ data class MonthlyStatsResponse(
     val previousMonthAmount: Double,
     val difference: Double,
     val percentageChange: Double,
-    val categoryStats: List<CategoryStatDTO>
+    val categoryStats: List<CategoryStatDTO>,
+    val expenses: List<ExpenseResponse>
 )
+
 
 data class CategoryStatDTO(
     val categoryName: String,

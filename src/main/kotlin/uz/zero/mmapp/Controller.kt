@@ -10,10 +10,10 @@ import java.time.LocalDate
 
 @RestController
 @RequestMapping("/api/categories")
-@PreAuthorize("hasRole('ADMIN')")
 class CategoryController(private val categoryService: CategoryService) {
 
     @PostMapping
+    @PreAuthorize("hasRole('ADMIN')")
     fun create(@Valid @RequestBody request: CategoryRequest) =
         categoryService.createCategory(request)
 
