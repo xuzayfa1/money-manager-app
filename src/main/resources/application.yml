@@ -3,9 +3,9 @@ spring:
     name: money-manager-app
   
   datasource:
-    url: jdbc:postgresql://localhost:5432/money_manager
-    username: postgres
-    password: 1012
+    url: jdbc:postgresql://localhost:5432/
+    username:
+    password:
     driver-class-name: org.postgresql.Driver
 
   jpa:
