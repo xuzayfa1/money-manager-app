@@ -16,6 +16,20 @@ data class CategoryRequest(
     val name: String
 )
 
+data class CategoryResponse(
+    val id: Long?,
+    val name: String
+)
+
+data class ExpenseResponse(
+    val id: Long?,
+    val title: String,
+    val amount: Double,
+    val date: LocalDate,
+    val description: String?,
+    val category: CategoryResponse?
+)
+
 data class MonthlyStatsResponse(
     val month: String,
     val totalAmount: Double,
@@ -69,5 +83,5 @@ data class RangeStatsResponse(
     val endDate: LocalDate,
     val totalAmount: Double,
     val categoryStats: List<CategoryStatDTO>,
-    val expenses: List<Expenses>
+    val expenses: List<ExpenseResponse>
 )

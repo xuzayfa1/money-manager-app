@@ -15,7 +15,8 @@ enum class ErrorCode(val code: Int) {
     CATEGORY_NOT_FOUND(404),
     BAD_CREDENTIALS(401),
     OLD_PASSWORD_INCORRECT(400),
-    FUTURE_DATE_NOT_ALLOWED(400)
+    FUTURE_DATE_NOT_ALLOWED(400),
+    VALIDATION_ERROR(400)
 }
 
 enum class UserRole {

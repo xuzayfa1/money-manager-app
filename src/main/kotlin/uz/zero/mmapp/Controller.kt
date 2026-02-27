@@ -102,4 +102,8 @@ class AuthController(private val authService: AuthService) {
     @PostMapping("/change-password")
     fun changePassword(@Valid @RequestBody request: ChangePasswordRequest) =
         authService.changePassword(request)
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @DeleteMapping("/{id}")
+    fun deleteUser(@PathVariable id: Long) = authService.deleteUser(id)
 }

@@ -1,6 +1,9 @@
 package uz.zero.mmapp
 
+import org.apache.poi.ss.usermodel.*
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import org.apache.poi.xssf.usermodel.XSSFCellStyle
+import org.apache.poi.xssf.usermodel.XSSFFont
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.io.ByteArrayOutputStream
@@ -9,8 +12,8 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
 
 interface ExpenseService{
-    fun createExpense(request: ExpenseRequest): Expenses
-    fun getAllExpenses(): List<Expenses>
+    fun createExpense(request: ExpenseRequest): ExpenseResponse
+    fun getAllExpenses(): List<ExpenseResponse>
     fun getMonthlyStats(year: Int, month: Int): MonthlyStatsResponse
     fun exportToExcel(year: Int, month: Int): ByteArray
     fun getStatsByRange(startDate: LocalDate, endDate: LocalDate): RangeStatsResponse
@@ -23,7 +26,7 @@ class ExpenseServiceImpl(
     private val categoryRepository: CategoryRepository
 ): ExpenseService {
     @Transactional
-    override fun createExpense(request: ExpenseRequest): Expenses {
+    override fun createExpense(request: ExpenseRequest): ExpenseResponse {
         val category = categoryRepository.findByIdAndDeletedFalse(request.categoryId)
             ?: throw CategoryNotFoundException()
         
@@ -34,7 +37,7 @@ class ExpenseServiceImpl(
             amount = request.amount,
             date = request.date
         )
-        return expensesRepository.save(expense)
+        return expensesRepository.save(expense).toResponse()
     }
 
     private fun getCurrentUserId(): Long {
@@ -46,7 +49,7 @@ class ExpenseServiceImpl(
         }
     }
 
-    override fun getAllExpenses(): List<Expenses> = expensesRepository.findAllByCreatedByAndDeletedFalse(getCurrentUserId())
+    override fun getAllExpenses(): List<ExpenseResponse> = expensesRepository.findAllByCreatedByAndDeletedFalse(getCurrentUserId()).map { it.toResponse() }
 
     override fun getMonthlyStats(year: Int, month: Int): MonthlyStatsResponse {
         val now = LocalDate.now()
@@ -87,30 +90,38 @@ class ExpenseServiceImpl(
         val stats = getMonthlyStats(year, month)
         val workbook = XSSFWorkbook()
         val sheet = workbook.createSheet("Monthly Expenses")
+        
+        val headerStyle = createHeaderStyle(workbook)
+        val dataStyle = createDataStyle(workbook)
+        val currencyStyle = createCurrencyStyle(workbook)
+        val summaryStyle = createSummaryStyle(workbook)
 
         val headerRow = sheet.createRow(0)
-        headerRow.createCell(0).setCellValue("Category")
-        headerRow.createCell(1).setCellValue("Amount")
+        createCell(headerRow, 0, "Category", headerStyle)
+        createCell(headerRow, 1, "Amount", headerStyle)
 
         var rowIdx = 1
         stats.categoryStats.forEach {
             val row = sheet.createRow(rowIdx++)
-            row.createCell(0).setCellValue(it.categoryName)
-            row.createCell(1).setCellValue(it.amount)
+            createCell(row, 0, it.categoryName, dataStyle)
+            createCell(row, 1, it.amount, currencyStyle)
         }
 
         val summaryStartRow = rowIdx + 1
         val summaryRow1 = sheet.createRow(summaryStartRow)
-        summaryRow1.createCell(0).setCellValue("Total for ${stats.month}")
-        summaryRow1.createCell(1).setCellValue(stats.totalAmount)
+        createCell(summaryRow1, 0, "Total for ${stats.month}", summaryStyle)
+        createCell(summaryRow1, 1, stats.totalAmount, currencyStyle)
 
         val summaryRow2 = sheet.createRow(summaryStartRow + 1)
-        summaryRow2.createCell(0).setCellValue("Previous Month")
-        summaryRow2.createCell(1).setCellValue(stats.previousMonthAmount)
+        createCell(summaryRow2, 0, "Previous Month", summaryStyle)
+        createCell(summaryRow2, 1, stats.previousMonthAmount, currencyStyle)
 
         val summaryRow3 = sheet.createRow(summaryStartRow + 2)
-        summaryRow3.createCell(0).setCellValue("Difference")
-        summaryRow3.createCell(1).setCellValue(stats.difference)
+        createCell(summaryRow3, 0, "Difference", summaryStyle)
+        createCell(summaryRow3, 1, stats.difference, currencyStyle)
+
+        sheet.autoSizeColumn(0)
+        sheet.autoSizeColumn(1)
 
         val outputStream = ByteArrayOutputStream()
         workbook.write(outputStream)
@@ -132,7 +143,7 @@ class ExpenseServiceImpl(
         val categoryStats = expensesRepository.findCategoryStatistics(startDate, endDate, userId).map {
             CategoryStatDTO(it.categoryName, it.totalAmount)
         }
-        val expenses = expensesRepository.findAllByDateBetween(startDate, endDate, userId)
+        val expenses = expensesRepository.findAllByDateBetween(startDate, endDate, userId).map { it.toResponse() }
 
         return RangeStatsResponse(
             startDate = startDate,
@@ -147,41 +158,153 @@ class ExpenseServiceImpl(
         val stats = getStatsByRange(startDate, endDate)
         val workbook = XSSFWorkbook()
         val sheet = workbook.createSheet("Expenses Range Report")
+        
+        val titleStyle = createTitleStyle(workbook)
+        val headerStyle = createHeaderStyle(workbook)
+        val dataStyle = createDataStyle(workbook)
+        val currencyStyle = createCurrencyStyle(workbook)
+        val summaryStyle = createSummaryStyle(workbook)
+        val totalStyle = createTotalStyle(workbook)
 
-        val headerRow = sheet.createRow(0)
-        headerRow.createCell(0).setCellValue("Date")
-        headerRow.createCell(1).setCellValue("Category")
-        headerRow.createCell(2).setCellValue("Title")
-        headerRow.createCell(3).setCellValue("Amount")
+        // Title Row
+        val titleRow = sheet.createRow(0)
+        createCell(titleRow, 0, "EXPENSES REPORT: ${startDate} to ${endDate}", titleStyle)
+        sheet.addMergedRegion(org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, 3))
 
-        var rowIdx = 1
+        val headerRow = sheet.createRow(1)
+        createCell(headerRow, 0, "Date", headerStyle)
+        createCell(headerRow, 1, "Category", headerStyle)
+        createCell(headerRow, 2, "Title", headerStyle)
+        createCell(headerRow, 3, "Amount", headerStyle)
+
+        var rowIdx = 2
         stats.expenses.forEach {
             val row = sheet.createRow(rowIdx++)
-            row.createCell(0).setCellValue(it.date.toString())
-            row.createCell(1).setCellValue(it.category?.name ?: "N/A")
-            row.createCell(2).setCellValue(it.title)
-            row.createCell(3).setCellValue(it.amount)
+            createCell(row, 0, it.date.toString(), dataStyle)
+            createCell(row, 1, it.category?.name ?: "N/A", dataStyle)
+            createCell(row, 2, it.title, dataStyle)
+            createCell(row, 3, it.amount, currencyStyle)
         }
 
-        val summaryStartRow = rowIdx + 1
-        val summaryHeader = sheet.createRow(summaryStartRow)
-        summaryHeader.createCell(0).setCellValue("Summary By Category")
+        rowIdx++
+        val summaryHeader = sheet.createRow(rowIdx++)
+        createCell(summaryHeader, 0, "Summary By Category", summaryStyle)
+        sheet.addMergedRegion(org.apache.poi.ss.util.CellRangeAddress(rowIdx - 1, rowIdx - 1, 0, 2))
+        createCell(summaryHeader, 3, "", summaryStyle)
         
-        rowIdx = summaryStartRow + 1
         stats.categoryStats.forEach {
             val row = sheet.createRow(rowIdx++)
-            row.createCell(0).setCellValue(it.categoryName)
-            row.createCell(3).setCellValue(it.amount)
+            createCell(row, 0, it.categoryName, dataStyle)
+            sheet.addMergedRegion(org.apache.poi.ss.util.CellRangeAddress(rowIdx - 1, rowIdx - 1, 0, 2))
+            createCell(row, 3, it.amount, currencyStyle)
         }
 
-        val totalRow = sheet.createRow(rowIdx + 1)
-        totalRow.createCell(0).setCellValue("TOTAL AMOUNT")
-        totalRow.createCell(3).setCellValue(stats.totalAmount)
+        rowIdx++
+        val totalRow = sheet.createRow(rowIdx)
+        createCell(totalRow, 0, "TOTAL EXPENDITURE", totalStyle)
+        sheet.addMergedRegion(org.apache.poi.ss.util.CellRangeAddress(rowIdx, rowIdx, 0, 2))
+        createCell(totalRow, 3, stats.totalAmount, createCurrencyStyle(workbook, true))
+
+        for (i in 0..3) sheet.autoSizeColumn(i)
 
         val outputStream = ByteArrayOutputStream()
         workbook.write(outputStream)
         workbook.close()
         return outputStream.toByteArray()
+    }
+
+    private fun createTitleStyle(workbook: Workbook): CellStyle {
+        val style = workbook.createCellStyle()
+        val font = workbook.createFont()
+        font.bold = true
+        font.fontHeightInPoints = 14.toShort()
+        style.setFont(font)
+        style.alignment = HorizontalAlignment.CENTER
+        style.fillForegroundColor = IndexedColors.GREY_50_PERCENT.getIndex()
+        style.fillPattern = FillPatternType.SOLID_FOREGROUND
+        font.color = IndexedColors.WHITE.getIndex()
+        return style
+    }
+
+    private fun createTotalStyle(workbook: Workbook): CellStyle {
+        val style = workbook.createCellStyle()
+        val font = workbook.createFont()
+        font.bold = true
+        style.setFont(font)
+        style.fillForegroundColor = IndexedColors.ORANGE.getIndex()
+        style.fillPattern = FillPatternType.SOLID_FOREGROUND
+        font.color = IndexedColors.WHITE.getIndex()
+        setBorders(style)
+        return style
+    }
+
+    private fun createCurrencyStyle(workbook: Workbook, isBold: Boolean = false): CellStyle {
+        val style = workbook.createCellStyle()
+        val format = workbook.createDataFormat()
+        style.dataFormat = format.getFormat("#,##0.00")
+        if (isBold) {
+            val font = workbook.createFont()
+            font.bold = true
+            style.setFont(font)
+        }
+        setBorders(style)
+        return style
+    }
+
+    private fun createHeaderStyle(workbook: Workbook): CellStyle {
+        val style = workbook.createCellStyle()
+        val font = workbook.createFont()
+        font.bold = true
+        font.color = IndexedColors.WHITE.getIndex()
+        style.setFont(font)
+        style.fillForegroundColor = IndexedColors.CORNFLOWER_BLUE.getIndex()
+        style.fillPattern = FillPatternType.SOLID_FOREGROUND
+        style.alignment = HorizontalAlignment.CENTER
+        setBorders(style)
+        return style
+    }
+
+    private fun createDataStyle(workbook: Workbook): CellStyle {
+        val style = workbook.createCellStyle()
+        setBorders(style)
+        return style
+    }
+
+    private fun createCurrencyStyle(workbook: Workbook): CellStyle {
+        val style = workbook.createCellStyle()
+        val format = workbook.createDataFormat()
+        style.dataFormat = format.getFormat("#,##0.00")
+        setBorders(style)
+        return style
+    }
+
+    private fun createSummaryStyle(workbook: Workbook): CellStyle {
+        val style = workbook.createCellStyle()
+        val font = workbook.createFont()
+        font.bold = true
+        style.setFont(font)
+        style.fillForegroundColor = IndexedColors.GREY_25_PERCENT.getIndex()
+        style.fillPattern = FillPatternType.SOLID_FOREGROUND
+        setBorders(style)
+        return style
+    }
+
+    private fun setBorders(style: CellStyle) {
+        style.borderTop = BorderStyle.THIN
+        style.borderBottom = BorderStyle.THIN
+        style.borderLeft = BorderStyle.THIN
+        style.borderRight = BorderStyle.THIN
+    }
+
+    private fun createCell(row: Row, column: Int, value: Any?, style: CellStyle) {
+        val cell = row.createCell(column)
+        when (value) {
+            is String -> cell.setCellValue(value)
+            is Double -> cell.setCellValue(value)
+            is Int -> cell.setCellValue(value.toDouble())
+            else -> cell.setCellValue(value?.toString() ?: "")
+        }
+        cell.cellStyle = style
     }
 
     override fun deleteExpense(id: Long): BaseMessage {
@@ -197,18 +320,18 @@ class ExpenseServiceImpl(
     }
 }
 interface CategoryService{
-    fun createCategory(request: CategoryRequest): Category
-    fun getAllCategories(): List<Category>
+    fun createCategory(request: CategoryRequest): CategoryResponse
+    fun getAllCategories(): List<CategoryResponse>
     fun deleteCategory(id: Long): BaseMessage
 }
 @Service
 class CategoryServiceImpl(private val categoryRepository: CategoryRepository): CategoryService {
-    override fun createCategory(request: CategoryRequest): Category {
+    override fun createCategory(request: CategoryRequest): CategoryResponse {
         val category = Category(name = request.name)
-        return categoryRepository.save(category)
+        return categoryRepository.save(category).toResponse()
     }
 
-    override fun getAllCategories(): List<Category> = categoryRepository.findAllNotDeleted()
+    override fun getAllCategories(): List<CategoryResponse> = categoryRepository.findAllNotDeleted().map { it.toResponse() }
 
     override fun deleteCategory(id: Long): BaseMessage {
         categoryRepository.trash(id)
@@ -221,6 +344,7 @@ interface AuthService {
     fun register(request: RegisterRequest): UserResponse
     fun login(request: AuthRequest): AuthResponse
     fun changePassword(request: ChangePasswordRequest): BaseMessage
+    fun deleteUser(id: Long): BaseMessage
 }
 
 @Service
@@ -274,4 +398,23 @@ class AuthServiceImpl(
 
         return BaseMessage(200, "Parol muvaffaqiyatli o'zgartirildi")
     }
+
+    override fun deleteUser(id: Long): BaseMessage {
+        userRepository.trash(id) ?: throw UserNotFoundException()
+        return BaseMessage(200, "Foydalanuvchi muvaffaqiyatli o'chirildi")
+    }
 }
+
+private fun Expenses.toResponse() = ExpenseResponse(
+    id = this.id,
+    title = this.title,
+    amount = this.amount,
+    date = this.date,
+    description = this.description,
+    category = this.category?.toResponse()
+)
+
+private fun Category.toResponse() = CategoryResponse(
+    id = this.id,
+    name = this.name
+)

@@ -1,5 +1,6 @@
 package uz.zero.mmapp
 
+import jakarta.validation.ConstraintViolationException
 import org.springframework.context.MessageSource
 import org.springframework.context.i18n.LocaleContextHolder
 import org.springframework.dao.DataIntegrityViolationException
@@ -26,11 +27,7 @@ class GlobalExceptionHandler(
             }
 
             is AuthenticationException -> {
-                val message = try {
-                    messageSource.getMessage(ErrorCode.BAD_CREDENTIALS.toString(), null, LocaleContextHolder.getLocale())
-                } catch (e: Exception) {
-                    "Login yoki parol noto'g'ri"
-                }
+                val message = getLocalizedMessage(ErrorCode.BAD_CREDENTIALS.toString()) ?: "Login yoki parol noto'g'ri"
                 ResponseEntity
                     .status(HttpStatus.UNAUTHORIZED)
                     .body(BaseMessage(ErrorCode.BAD_CREDENTIALS.code, message))
@@ -43,11 +40,23 @@ class GlobalExceptionHandler(
             }
 
             is MethodArgumentNotValidException -> {
-                val errors =
-                    exception.bindingResult?.fieldErrors?.joinToString(", ") { "${it.field}: ${it.defaultMessage}" }
+                val errorMessage = exception.bindingResult.fieldErrors.firstOrNull()?.let { error ->
+                    getLocalizedMessage(error.defaultMessage ?: "") ?: "${error.field}: ${error.defaultMessage}"
+                } ?: "Validatsiya xatosi"
+                
                 ResponseEntity
                     .badRequest()
-                    .body(BaseMessage(400, "Validatsiya xatosi: $errors"))
+                    .body(BaseMessage(ErrorCode.VALIDATION_ERROR.code, errorMessage))
+            }
+
+            is ConstraintViolationException -> {
+                val errorMessage = exception.constraintViolations.firstOrNull()?.let { violation ->
+                    getLocalizedMessage(violation.messageTemplate.trim('{', '}')) ?: violation.message
+                } ?: "Validatsiya xatosi"
+
+                ResponseEntity
+                    .badRequest()
+                    .body(BaseMessage(ErrorCode.VALIDATION_ERROR.code, errorMessage))
             }
 
             else -> {
@@ -56,6 +65,14 @@ class GlobalExceptionHandler(
                     .status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(BaseMessage(100, "Iltimos support bilan bog'laning. Xatolik: ${exception.message}"))
             }
+        }
+    }
+
+    private fun getLocalizedMessage(key: String): String? {
+        return try {
+            messageSource.getMessage(key, null, LocaleContextHolder.getLocale())
+        } catch (e: Exception) {
+            null
         }
     }
 }
